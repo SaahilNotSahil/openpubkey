@@ -19,6 +19,7 @@ package choosers
 import (
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -125,7 +126,7 @@ func (wc *WebChooser) ChooseOp(ctx context.Context) (providers.OpenIdProvider, e
 		shutdownServer := func() {
 			go func() { // Put this in a go func so that it will not block the redirect
 				if wc.server != nil {
-					if err := wc.server.Shutdown(context.Background()); err != nil {
+					if err := wc.server.Shutdown(ctx); err != nil {
 						logrus.Errorf("Failed to shutdown http server: %v", err)
 					}
 				}
@@ -137,13 +138,13 @@ func (wc *WebChooser) ChooseOp(ctx context.Context) (providers.OpenIdProvider, e
 		if opName == "" {
 			errorString := "missing op parameter"
 			http.Error(w, errorString, http.StatusBadRequest)
-			errCh <- fmt.Errorf(errorString)
+			errCh <- errors.New(errorString)
 			return
 		}
 		if op, ok := providerMap[opName]; !ok {
 			errorString := fmt.Sprintf("unknown OpenID Provider: %s", opName)
 			http.Error(w, errorString, http.StatusBadRequest)
-			errCh <- fmt.Errorf(errorString)
+			errCh <- errors.New(errorString)
 			return
 		} else {
 			opCh <- op
@@ -182,6 +183,8 @@ func (wc *WebChooser) ChooseOp(ctx context.Context) (providers.OpenIdProvider, e
 	}
 
 	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	case err := <-errCh:
 		return nil, err
 	case wc.opSelected = <-opCh:
